@@ -1,0 +1,22 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+
+# 临时调试文件
+tmp_*.cjs
+tmp_*.mjs
+tmp_*.html
+tmp_*.js
+tmp_check/
+tmp_edge_profile/
+tmp_smoke_src/
+
+# 日志与错误转储
+smoke-err*.txt
+tool_probe.txt
+
+# 操作系统
+.DS_Store
+Thumbs.db
