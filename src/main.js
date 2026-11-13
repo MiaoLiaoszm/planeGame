@@ -15,15 +15,740 @@ if (!planck || !Stage) {
   throw new Error("Sky Patrol 启动失败：缺少 planck 或 stage-js");
 }
 
-import { PPM, WORLD_W, WORLD_H, STEP, GRAVITY, MAX_HP, GROUND_Y, CAT, clamp, rand, easeOutQuart, CHAIN_COLOR, CONVERTED_AURA_SCALE, POWER_UP_CONFIG, BOMBER_CHAIN_PATTERN, DUO_CHAIN_PATTERN } from "./config.js";
-import { convertedSpriteTexture, solidTexture, PENDULUM_TEX, MAGNET_TEX, SPRING_BOMB_TEX, planeTexture, clayBlobTexture, smokeTexture, bulletTexture, powerBulletTexture, bombTexture, parachuteTexture, pendulumTexture, magnetTexture, springBombTexture, steelPlateTexture, gasTexture, commanderHaloTexture, allyHaloTexture, powerHaloTexture, dotTexture } from "./textures.js";
+import {
+  PPM,
+  WORLD_W,
+  WORLD_H,
+  STEP,
+  GRAVITY,
+  MAX_HP,
+  GROUND_Y,
+  CAT,
+  clamp,
+  rand,
+  easeOutQuart,
+  CHAIN_COLOR,
+  CONVERTED_AURA_SCALE,
+  POWER_UP_CONFIG,
+  BOMBER_CHAIN_PATTERN,
+  DUO_CHAIN_PATTERN,
+} from "./config.js";
+import {
+  convertedSpriteTexture,
+  solidTexture,
+  PENDULUM_TEX,
+  MAGNET_TEX,
+  SPRING_BOMB_TEX,
+  planeTexture,
+  clayBlobTexture,
+  smokeTexture,
+  bulletTexture,
+  powerBulletTexture,
+  bombTexture,
+  parachuteTexture,
+  pendulumTexture,
+  magnetTexture,
+  springBombTexture,
+  steelPlateTexture,
+  gasTexture,
+  commanderHaloTexture,
+  allyHaloTexture,
+  powerHaloTexture,
+  dotTexture,
+  soapBubbleTexture,
+  BARRIER_TEXTURE,
+  stoneTexture,
+} from "./textures.js";
 import { gameLayer, fogLayer } from "./stage.js";
 import { updateScroll } from "./background.js";
-import { TARGET_CONFIG, PENDULUM_CONFIG, MAGNET_CONFIG, STEEL_PLATE_CONFIG, CLAY_CONFIG, BOMBER_CONFIG, DUO_CONFIG, SPRING_BOMB_CONFIG, COMMANDER_CONFIG, ALLY_COMMANDER_CONFIG, HOMING_CONFIG, SNAKE_CONFIG, INVISIBLE_CONFIG, GAS_CONFIG, AUTOPILOT_CONFIG } from "./entityConfig.js";
-import { ensureAudio, soundShoot, soundHit, soundPuff, soundExplosion, soundHurt, soundConvert, soundPowerUp, soundClank, soundMagnet, soundHeal, soundGameOver } from "./audio.js";
-import { actionBtn, appEl, hintEl, updateHud as renderHud, showOverlay, hideOverlay } from "./hud.js";
-import { spawnParticles, spawnExplosion, spawnSparks, updateParticles, clearParticles } from "./fx.js";
+import {
+  TARGET_CONFIG,
+  PENDULUM_CONFIG,
+  MAGNET_CONFIG,
+  STEEL_PLATE_CONFIG,
+  GALE_CONFIG,
+  SOAP_CONFIG,
+  CLAY_CONFIG,
+  BOMBER_CONFIG,
+  DUO_CONFIG,
+  SPRING_BOMB_CONFIG,
+  COMMANDER_CONFIG,
+  ALLY_COMMANDER_CONFIG,
+  HOMING_CONFIG,
+  SNAKE_CONFIG,
+  INVISIBLE_CONFIG,
+  GAS_CONFIG,
+  AUTOPILOT_CONFIG,
+  BARRIER_CONFIG,
+  SPECIAL_BALLOON_CONFIG,
+  GEM_SPAWN_CONFIG,
+  STONE_CONFIG,
+} from "./entityConfig.js";
+import {
+  ensureAudio,
+  soundShoot,
+  soundHit,
+  soundPuff,
+  soundExplosion,
+  soundHurt,
+  soundConvert,
+  soundPowerUp,
+  soundClank,
+  soundMagnet,
+  soundHeal,
+  soundGameOver,
+} from "./audio.js";
+import {
+  actionBtn,
+  appEl,
+  hintEl,
+  updateHud as renderHud,
+  showOverlay,
+  hideOverlay,
+} from "./hud.js";
+import {
+  spawnParticles,
+  spawnExplosion,
+  spawnSparks,
+  updateParticles,
+  clearParticles,
+} from "./fx.js";
 import { drawInvisibleLenses } from "./lens.js";
+
+function barrierRegion() {
+  return {
+    minX: WORLD_W * BARRIER_CONFIG.regionMinX,
+    maxX: WORLD_W * BARRIER_CONFIG.regionMaxX,
+    minY: WORLD_H * BARRIER_CONFIG.regionMinY,
+    maxY: WORLD_H * BARRIER_CONFIG.regionMaxY,
+  };
+}
+
+function nextBarrierPoint() {
+  const region = barrierRegion();
+  return { x: rand(region.minX, region.maxX), y: rand(region.minY, region.maxY) };
+}
+
+function spawnBarrierBalloon() {
+  if (!world) return null;
+  if (barrierBalloon && !barrierBalloon.dead) return barrierBalloon;
+
+  const config = BARRIER_CONFIG;
+  const region = barrierRegion();
+  // 在屏幕右上角随机生成，确保完整显示
+  const x = rand(region.maxX - config.radius, region.maxX);
+  const y = rand(region.minY + config.radius, region.maxY - config.radius);
+
+  const body = world.createBody({
+    type: "kinematic",
+    position: planck.Vec2(x, y),
+    fixedRotation: true,
+  });
+  const fixture = body.createFixture(planck.Circle(config.radius), {
+    density: 1.2,
+    restitution: 0,
+    friction: 0,
+    filterCategoryBits: CAT.TARGET,
+    filterMaskBits: CAT.PLANE | CAT.BULLET,
+  });
+
+  const sprite = Stage.sprite(BARRIER_TEXTURE).appendTo(gameLayer);
+  sprite.pin({ pivotX: 0.5, pivotY: 0.5, handleX: 0.5, handleY: 0.5 });
+
+  const entity = createEntity("barrierBalloon", body, fixture, sprite, {
+    targetType: "barrierBalloon",
+    hp: config.hp,
+    points: config.points,
+    speed: config.speed + wave * config.speedPerWave,
+    age: 0,
+    phase: rand(0, Math.PI * 2),
+    flash: 0,
+    tiltAngle: 0,
+    wander: { x: rand(region.minX, region.maxX), y: rand(region.minY, region.maxY) },
+    bursting: true,
+    burstShots: 0,
+    throwTimer: rand(config.burstFirstDelayMin, config.burstFirstDelayMax),
+    pauseTimer: 0,
+  });
+
+  barrierBalloon = entity;
+  return entity;
+}
+
+function galeRegion() {
+  return {
+    minX: WORLD_W * GALE_CONFIG.regionMinX,
+    maxX: WORLD_W * GALE_CONFIG.regionMaxX,
+    minY: WORLD_H * GALE_CONFIG.regionMinY,
+    maxY: WORLD_H * GALE_CONFIG.regionMaxY,
+  };
+}
+
+function nextGalePoint() {
+  const region = galeRegion();
+  return { x: rand(region.minX, region.maxX), y: rand(region.minY, region.maxY) };
+}
+
+function galeWindInfo() {
+  if (!galeBalloon || galeBalloon.dead || galeBalloon.converted) return null;
+  if (!galeBalloon.windActive) return null;
+  const position = galeBalloon.body.getPosition();
+  return {
+    x: position.x + GALE_CONFIG.fanOffsetX,
+    y: position.y + GALE_CONFIG.fanOffsetY,
+    range: GALE_CONFIG.windRange * GALE_CONFIG.windRangeScale,
+    cos: Math.cos(GALE_CONFIG.windHalfAngle),
+  };
+}
+
+function inGaleWind(x, y) {
+  const info = galeWindInfo();
+  if (!info) return false;
+  const dx = x - info.x;
+  const dy = y - info.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance > info.range) return false;
+  if (distance < 0.001) return true;
+  return -dx / distance >= info.cos;
+}
+
+function spawnGaleBalloon(forcedY) {
+  if (!world) return null;
+  if (galeBalloon && !galeBalloon.dead && !galeBalloon.converted) return galeBalloon;
+
+  const config = GALE_CONFIG;
+  const region = galeRegion();
+  // 在屏幕右上角随机生成，确保完整显示
+  const x = rand(region.maxX - config.radius, region.maxX);
+  const y = clamp(
+    typeof forcedY === "number" ? forcedY : rand(region.minY + config.radius, region.maxY - config.radius),
+    region.minY + config.radius,
+    region.maxY - config.radius,
+  );
+
+  const body = world.createBody({
+    type: "kinematic",
+    position: planck.Vec2(x, y),
+    fixedRotation: true,
+  });
+  const fixture = body.createFixture(planck.Circle(config.radius), {
+    density: 1.2,
+    restitution: 0,
+    friction: 0,
+    filterCategoryBits: CAT.TARGET,
+    filterMaskBits: CAT.PLANE | CAT.BULLET,
+  });
+
+  const sprite = Stage.sprite(config.texture).appendTo(gameLayer);
+  sprite.pin({ pivotX: 0.5, pivotY: 0.5, handleX: 0.5, handleY: 0.5 });
+
+  const fanSprite = Stage.sprite(config.fanTexture).appendTo(gameLayer);
+  fanSprite.pin({ pivotX: 0.5, pivotY: 0.5, handleX: 0.5, handleY: 0.5 });
+
+  const windSprite = Stage.sprite(config.windTexture).appendTo(fogLayer);
+  windSprite.pin({ pivotX: 1, pivotY: 0.5, handleX: 1, handleY: 0.5, alpha: 0.12 });
+
+  const entity = createEntity("target", body, fixture, sprite, {
+    targetType: "galeBalloon",
+    hp: config.hp,
+    points: config.points,
+    heal: 0,
+    speed: config.speed + wave * config.speedPerWave,
+    bob: config.bob,
+    phase: rand(0, Math.PI * 2),
+    age: 0,
+    flash: 0,
+    fanSprite,
+    windSprite,
+    fanAngle: rand(0, Math.PI * 2),
+    fanOffsetX: config.fanOffsetX,
+    fanOffsetY: config.fanOffsetY,
+    wander: { x: rand(region.minX, region.maxX), y: rand(region.minY, region.maxY) },
+    windActive: true,
+    windTimer: config.windOnDuration,
+  });
+
+  galeBalloon = entity;
+  return entity;
+}
+
+function soapRegion() {
+  return {
+    minX: WORLD_W * SOAP_CONFIG.regionMinX,
+    maxX: WORLD_W * SOAP_CONFIG.regionMaxX,
+    minY: WORLD_H * SOAP_CONFIG.regionMinY,
+    maxY: WORLD_H * SOAP_CONFIG.regionMaxY,
+  };
+}
+
+function nextSoapPoint() {
+  const region = soapRegion();
+  return { x: rand(region.minX, region.maxX), y: rand(region.minY, region.maxY) };
+}
+
+function spawnSoapBalloon(forcedY) {
+  if (!world) return null;
+  if (soapBalloon && !soapBalloon.dead && !soapBalloon.converted) return soapBalloon;
+
+  const config = SOAP_CONFIG;
+  const region = soapRegion();
+  const x = rand(region.maxX - config.radius, region.maxX);
+  const y = clamp(
+    typeof forcedY === "number" ? forcedY : rand(region.minY + config.radius, region.maxY - config.radius),
+    region.minY + config.radius,
+    region.maxY - config.radius,
+  );
+
+  const body = world.createBody({
+    type: "kinematic",
+    position: planck.Vec2(x, y),
+    fixedRotation: true,
+  });
+  const fixture = body.createFixture(planck.Circle(config.radius), {
+    density: 1.2,
+    restitution: 0,
+    friction: 0,
+    filterCategoryBits: CAT.TARGET,
+    filterMaskBits: CAT.PLANE | CAT.BULLET,
+  });
+
+  const sprite = Stage.sprite(config.texture).appendTo(gameLayer);
+  sprite.pin({ pivotX: 0.5, pivotY: 0.5, handleX: 0.5, handleY: 0.5 });
+
+  const entity = createEntity("target", body, fixture, sprite, {
+    targetType: "soapBalloon",
+    hp: config.hp,
+    points: config.points,
+    heal: 0,
+    speed: config.speed + wave * config.speedPerWave,
+    bob: config.bob,
+    phase: rand(0, Math.PI * 2),
+    age: 0,
+    flash: 0,
+    wander: { x: rand(region.minX, region.maxX), y: rand(region.minY, region.maxY) },
+    sprayTimer: rand(0, config.sprayInterval * 0.5),
+  });
+
+  soapBalloon = entity;
+  return entity;
+}
+
+function spawnSoapBubble(originX, originY, burstLife) {
+  const config = SOAP_CONFIG;
+  if (soapBubbles.length >= config.maxBubbles) return null;
+
+  const angle = rand(-config.spraySpread, config.spraySpread);
+  const speed = rand(config.spraySpeedMin, config.spraySpeedMax);
+  const radius = config.bubbleRadius * rand(0.75, 1.35);
+  const scale = (radius * 2 * PPM) / soapBubbleTexture.getWidth();
+
+  const sprite = Stage.sprite(soapBubbleTexture).appendTo(fogLayer);
+  sprite.pin({
+    pivotX: 0.5,
+    pivotY: 0.5,
+    handleX: 0.5,
+    handleY: 0.5,
+    scaleX: scale,
+    scaleY: scale,
+    alpha: 0.85,
+  });
+
+  const bubble = {
+    x: originX + rand(-config.sprayRadius, config.sprayRadius),
+    y: originY + rand(-config.sprayRadius * 1.3, config.sprayRadius * 1.3),
+    vx: -Math.cos(angle) * speed,
+    vy: -rand(config.sprayUpMin, config.sprayUpMax) + Math.sin(angle) * speed * 0.3,
+    radius,
+    scale,
+    age: 0,
+    life: Math.max(0.6, burstLife + rand(-0.25, 0.25)),
+    stuck: false,
+    stuckAge: 0,
+    offsetX: 0,
+    offsetY: 0,
+    pop: false,
+    popT: 0,
+    sprite,
+  };
+
+  soapBubbles.push(bubble);
+  return bubble;
+}
+
+function spraySoapBubbles(entity) {
+  if (!entity || entity.dead) return;
+  const config = SOAP_CONFIG;
+  const position = entity.body.getPosition();
+  const originX = position.x + config.sprayOffsetX;
+  const originY = position.y + config.sprayOffsetY;
+  const burstLife = config.bubbleLife;
+
+  for (let i = 0; i < config.sprayCount; i += 1) {
+    spawnSoapBubble(originX, originY, burstLife);
+  }
+}
+
+function spawnStone(originX, originY, targetX, upSpeed, refFlight, balloonEntity) {
+  if (!world) return null;
+  if (stones.length >= STONE_CONFIG.maxActive) return null;
+
+  const config = STONE_CONFIG;
+  const halfWidth = config.width / 2;
+  const halfHeight = config.height / 2;
+  const startX = originX + rand(-config.spreadX, config.spreadX);
+  const startY = originY + rand(-config.spreadY, config.spreadY);
+
+  const body = world.createBody({
+    type: "dynamic",
+    position: planck.Vec2(startX, startY),
+    angularDamping: config.angularDamping,
+    linearDamping: config.linearDamping,
+    gravityScale: config.gravityScale,
+  });
+  const fixture = body.createFixture(planck.Box(halfWidth, halfHeight), {
+    density: config.density,
+    friction: config.friction,
+    restitution: config.restitution,
+    filterCategoryBits: CAT.STONE,
+    filterMaskBits: CAT.PLANE | CAT.BULLET | CAT.GROUND,
+  });
+
+  const texture = stoneTexture;
+  const scaleX = (config.width * PPM) / texture.getWidth();
+  const scaleY = (config.height * PPM) / texture.getHeight();
+  const sprite = Stage.sprite(texture).appendTo(gameLayer);
+  sprite.pin({
+    pivotX: 0.5,
+    pivotY: 0.5,
+    handleX: 0.5,
+    handleY: 0.5,
+    scaleX,
+    scaleY,
+  });
+
+  const stone = createEntity("stone", body, fixture, sprite, {
+    targetType: "stone",
+    hp: 1,
+    points: 0,
+    age: 0,
+    phase: rand(0, Math.PI * 2),
+    scaleX,
+    scaleY,
+    balloon: balloonEntity || null,
+    landed: false,
+  });
+
+  const gravity = GRAVITY * config.gravityScale;
+  const drop = Math.max(0.05, GROUND_Y - startY - halfHeight);
+  const flightTime =
+    (upSpeed + Math.sqrt(upSpeed * upSpeed + 2 * gravity * drop)) / gravity;
+  const driftSpeed = scrollSpeed() / PPM;
+  const converge = driftSpeed * (refFlight - flightTime);
+  const offset = ((rand(-1, 1) + rand(-1, 1)) / 2) * config.landSpread;
+  const landX = targetX + offset + converge;
+  const flightX = ((landX - startX) / flightTime) * config.throwSpeedScale;
+
+  body.setLinearVelocity(planck.Vec2(flightX, -upSpeed));
+  const spinDir = rand(0, 1) < 0.5 ? -1 : 1;
+  body.setAngularVelocity(spinDir * rand(config.spinMin, config.spinMax));
+  stones.push(stone);
+  return stone;
+}
+
+function throwStoneVolley(entity) {
+  const config = BARRIER_CONFIG;
+  const stoneConfig = STONE_CONFIG;
+  const position = entity.body.getPosition();
+  const gravity = GRAVITY * stoneConfig.gravityScale;
+  const drop = Math.max(0.05, GROUND_Y - position.y - stoneConfig.height / 2);
+  const base = Math.max(1, config.stoneCount);
+  const count = Math.max(1, Math.round(rand(base - 1, base + 1)));
+  const targetX =
+    position.x - rand(stoneConfig.targetDistanceMin, stoneConfig.targetDistanceMax);
+
+  const shots = [];
+  let refFlight = 0;
+  for (let i = 0; i < count; i += 1) {
+    const upSpeed = rand(stoneConfig.throwUpMin, stoneConfig.throwUpMax);
+    const flightTime =
+      (upSpeed + Math.sqrt(upSpeed * upSpeed + 2 * gravity * drop)) / gravity;
+    shots.push({ upSpeed, flightTime });
+    if (flightTime > refFlight) refFlight = flightTime;
+  }
+
+  for (const shot of shots) {
+    if (stones.length >= stoneConfig.maxActive) return;
+    spawnStone(position.x, position.y, targetX, shot.upSpeed, refFlight, entity);
+  }
+}
+
+function updateBarrierBalloon(dt) {
+  const entity = barrierBalloon;
+  if (!entity || entity.dead) return;
+
+  const config = BARRIER_CONFIG;
+  entity.age += dt;
+  entity.flash = Math.max(0, entity.flash - dt);
+
+  const position = entity.body.getPosition();
+  const region = barrierRegion();
+
+  const toWander = Math.hypot(
+    entity.wander.x - position.x,
+    entity.wander.y - position.y,
+  );
+
+  if (toWander < config.retargetDistance) entity.wander = nextBarrierPoint();
+  if (
+    position.x < region.minX ||
+    position.x > region.maxX ||
+    position.y < region.minY ||
+    position.y > region.maxY
+  ) {
+    entity.wander = nextBarrierPoint();
+  }
+
+  const dx = entity.wander.x - position.x;
+  const dy = entity.wander.y - position.y;
+  const length = Math.hypot(dx, dy) || 1;
+  // 补偿屏幕向左滚动，不跟随屏幕离开
+  const drift = scrollSpeed() / PPM;
+  let vx = (dx / length) * entity.speed + drift;
+  let vy = (dy / length) * entity.speed;
+  // 边界约束：防止飞离屏幕
+  if (position.x < region.minX + config.radius) vx = Math.max(0.2, vx);
+  if (position.x > region.maxX - config.radius) vx = Math.min(-0.2, vx);
+  if (position.y < region.minY + config.radius) vy = Math.max(0.2, vy);
+  if (position.y > region.maxY - config.radius) vy = Math.min(-0.2, vy);
+  entity.body.setLinearVelocity(planck.Vec2(vx, vy));
+
+  if (entity.bursting) {
+    entity.throwTimer -= dt;
+    if (entity.throwTimer > 0) return;
+
+    entity.throwTimer = config.burstVolleyInterval;
+    entity.burstShots += 1;
+    throwStoneVolley(entity);
+
+    if (entity.burstShots >= config.burstVolleys) {
+      entity.bursting = false;
+      entity.pauseTimer = config.pauseDuration;
+      entity.wander = nextBarrierPoint();
+    }
+    return;
+  }
+
+  entity.pauseTimer -= dt;
+  if (entity.pauseTimer > 0) return;
+
+  entity.bursting = true;
+  entity.burstShots = 0;
+  entity.throwTimer = 0;
+}
+
+function updateStones(dt) {
+  const config = STONE_CONFIG;
+  const groundY = GROUND_Y;
+  const driftX = -scrollSpeed() / PPM;
+
+  for (let i = stones.length - 1; i >= 0; i -= 1) {
+    const stone = stones[i];
+    if (!stone) {
+      stones.splice(i, 1);
+      continue;
+    }
+    if (stone.dead) {
+      stones.splice(i, 1);
+      continue;
+    }
+
+    stone.age += dt;
+    const position = stone.body.getPosition();
+    const velocity = stone.body.getLinearVelocity();
+
+    if (
+      !stone.landed &&
+      position.y > groundY - config.settleBand &&
+      Math.abs(velocity.y) < config.settleSpeed
+    ) {
+      stone.landed = true;
+      // 落地后切换为运动学刚体：脱离动力学求解，逐帧物理开销大幅下降
+      stone.body.setType("kinematic");
+      stone.body.setLinearVelocity(planck.Vec2(driftX, 0));
+      stone.body.setAngularVelocity(0);
+    }
+
+    if (stone.landed) {
+      stone.body.setLinearVelocity(planck.Vec2(driftX, 0));
+    }
+
+    if (position.x < config.despawnX || position.y > WORLD_H + 2) {
+      markDead(stone);
+      stones.splice(i, 1);
+    }
+  }
+}
+
+function specialBalloonAlive() {
+  if (barrierBalloon && !barrierBalloon.dead) return true;
+  if (galeBalloon && !galeBalloon.dead && !galeBalloon.converted) return true;
+  if (soapBalloon && !soapBalloon.dead && !soapBalloon.converted) return true;
+  if (commander && !commander.dead) return true;
+  return false;
+}
+
+function spawnSpecialBalloon() {
+  const r = Math.random();
+  const barrierChance = SPECIAL_BALLOON_CONFIG.barrierChance;
+  const commanderChance = barrierChance + SPECIAL_BALLOON_CONFIG.commanderChance;
+  const soapChance = commanderChance + SPECIAL_BALLOON_CONFIG.soapChance;
+  if (r < barrierChance) return spawnBarrierBalloon();
+  if (r < commanderChance) return spawnCommander();
+  if (r < soapChance) return spawnSoapBalloon();
+  return spawnGaleBalloon();
+}
+
+function updateGaleBalloon(dt) {
+  if (state !== "playing") return;
+
+  if (!galeBalloon || galeBalloon.dead || galeBalloon.converted) return;
+
+  galeBalloon.windTimer -= dt;
+  if (galeBalloon.windTimer > 0) return;
+  galeBalloon.windActive = !galeBalloon.windActive;
+  galeBalloon.windTimer = galeBalloon.windActive
+    ? GALE_CONFIG.windOnDuration
+    : GALE_CONFIG.windOffDuration;
+}
+
+function updateSoapBalloon(dt) {
+  if (state !== "playing") return;
+  if (!soapBalloon || soapBalloon.dead || soapBalloon.converted) return;
+
+  soapBalloon.sprayTimer -= dt;
+  if (soapBalloon.sprayTimer > 0) return;
+  soapBalloon.sprayTimer = SOAP_CONFIG.sprayInterval;
+  spraySoapBubbles(soapBalloon);
+}
+
+function popSoapBubble(bubble) {
+  if (bubble.sprite) {
+    bubble.sprite.remove();
+    bubble.sprite = null;
+  }
+}
+
+function clearSoapBubbles() {
+  for (const bubble of soapBubbles) popSoapBubble(bubble);
+  soapBubbles = [];
+}
+
+function updateSoapBubbles(dt) {
+  if (state !== "playing") return;
+
+  const config = SOAP_CONFIG;
+  const planePosition = plane && !plane.dead ? plane.body.getPosition() : null;
+  const planeRadius = config.stickRadius;
+  let stuckCount = 0;
+
+  for (let i = soapBubbles.length - 1; i >= 0; i -= 1) {
+    const bubble = soapBubbles[i];
+    bubble.age += dt;
+
+    if (bubble.stuck && planePosition) {
+      bubble.stuckAge += dt;
+      bubble.x = planePosition.x + bubble.offsetX;
+      bubble.y = planePosition.y + bubble.offsetY;
+      stuckCount += 1;
+    } else {
+      if (bubble.stuck) bubble.stuck = false;
+      const blend = Math.min(1, dt * config.bubbleDrag * 4);
+      bubble.vx += (config.bubbleDriftX - bubble.vx) * blend;
+      bubble.vy += (config.bubbleDriftY - bubble.vy) * blend;
+      bubble.x += bubble.vx * dt;
+      bubble.y += bubble.vy * dt;
+
+      if (
+        planePosition &&
+        !bubble.stuck &&
+        !bubble.pop &&
+        Math.hypot(bubble.x - planePosition.x, bubble.y - planePosition.y) <
+          planeRadius + bubble.radius
+      ) {
+        bubble.stuck = true;
+        bubble.stuckAge = 0;
+        bubble.offsetX = bubble.x - planePosition.x;
+        bubble.offsetY = bubble.y - planePosition.y;
+        stuckCount += 1;
+      }
+    }
+
+    // 粘附后改用独立的吸附寿命计时，避免气泡一贴上就因飞行寿命耗尽而爆裂
+    const lifeLimit = bubble.stuck ? config.bubbleStickLife : bubble.life;
+    const elapsed = bubble.stuck ? bubble.stuckAge : bubble.age;
+    if (!bubble.pop && elapsed >= lifeLimit) bubble.pop = true;
+
+    if (bubble.pop) {
+      bubble.popT += dt / config.bubblePopStagger;
+      const fade = Math.max(0, 1 - bubble.popT);
+      if (bubble.sprite) {
+        const grow = 1 + bubble.popT * 0.6;
+        bubble.sprite.pin({
+          offsetX: bubble.x * PPM,
+          offsetY: bubble.y * PPM,
+          scaleX: bubble.scale * grow,
+          scaleY: bubble.scale * grow,
+          alpha: 0.85 * fade,
+        });
+      }
+      if (bubble.popT >= 1) {
+        popSoapBubble(bubble);
+        soapBubbles.splice(i, 1);
+      }
+      continue;
+    }
+
+    if (bubble.sprite) {
+      const wobble = Math.sin(bubble.age * 6 + bubble.radius * 20) * 0.08;
+      bubble.sprite.pin({
+        offsetX: bubble.x * PPM,
+        offsetY: bubble.y * PPM,
+        scaleX: bubble.scale * (1 + wobble),
+        scaleY: bubble.scale * (1 - wobble),
+        alpha: bubble.stuck ? 1 : 0.85,
+      });
+    }
+
+    if (bubble.x < -2 || bubble.y < -2 || bubble.y > WORLD_H + 2) {
+      popSoapBubble(bubble);
+      soapBubbles.splice(i, 1);
+    }
+  }
+
+  if (plane && !plane.dead) plane.soapStuck = stuckCount;
+}
+
+function updateSpecialBalloons(dt) {
+  if (state !== "playing") {
+    updateStones(dt);
+    return;
+  }
+
+  if (
+    !specialBalloonAlive() &&
+    wave >= SPECIAL_BALLOON_CONFIG.minWave &&
+    specialBalloonWave !== wave
+  ) {
+    const spawned = spawnSpecialBalloon();
+    if (spawned) specialBalloonWave = wave;
+  }
+
+  if (barrierBalloon && !barrierBalloon.dead) updateBarrierBalloon(dt);
+  updateGaleBalloon(dt);
+  updateSoapBalloon(dt);
+  updateSoapBubbles(dt);
+  updateStones(dt);
+}
 
 function updateHud() {
   renderHud({ score, best, hp, wave, powerTimer });
@@ -41,6 +766,7 @@ const HINT_MANUAL =
   "WASD / 方向键 移动 · 空格或按住鼠标 射击 · 每 200 分强化火力 8 秒 · R 重新开始 · P 自动演示";
 const HINT_AUTOPILOT = "自动演示中 · 按 P 返回手动操控";
 const AUTOPILOT_RESTART_DELAY = 2.5;
+const MAX_STEPS_PER_FRAME = 3;
 
 let autopilot = false;
 let autopilotRestart = 0;
@@ -57,6 +783,13 @@ let commander = null;
 let allyCommander = null;
 let allySpawnTimer = 0;
 let conversionActive = false;
+
+let barrierBalloon = null;
+let galeBalloon = null;
+let specialBalloonWave = 0;
+let soapBalloon = null;
+let soapBubbles = [];
+let stones = [];
 let entities = [];
 let state = "menu";
 let score = 0;
@@ -65,6 +798,8 @@ let hp = MAX_HP;
 let wave = 1;
 let gameTime = 0;
 let spawnTimer = 1;
+let waveGemTimer = 0;
+let waveGemSpawned = 0;
 let waveScript = null;
 let ambientSquadIndex = 0;
 let fireTimer = 0;
@@ -107,12 +842,16 @@ function nextWanderPoint() {
 }
 
 function spawnCommander() {
+  if (!world) return null;
   const config = COMMANDER_CONFIG;
-  const point = nextWanderPoint();
+  const region = commanderRegion();
+  // 在屏幕右上角随机生成，确保完整显示
+  const x = rand(region.maxX - config.radius, region.maxX);
+  const y = rand(region.minY + config.radius, region.maxY - config.radius);
 
   const body = world.createBody({
     type: "kinematic",
-    position: planck.Vec2(point.x, point.y),
+    position: planck.Vec2(x, y),
     fixedRotation: true,
   });
   const fixture = body.createFixture(planck.Circle(config.radius), {
@@ -150,7 +889,7 @@ function spawnCommander() {
     flash: 0,
     halo,
     haloScale,
-    wander: nextWanderPoint(),
+    wander: { x: rand(region.minX, region.maxX), y: rand(region.minY, region.maxY) },
   });
 
   return commander;
@@ -159,6 +898,7 @@ function spawnCommander() {
 function moveCommander(entity) {
   const config = COMMANDER_CONFIG;
   const position = entity.body.getPosition();
+
   const toWander = Math.hypot(
     entity.wander.x - position.x,
     entity.wander.y - position.y,
@@ -169,10 +909,17 @@ function moveCommander(entity) {
   const dx = entity.wander.x - position.x;
   const dy = entity.wander.y - position.y;
   const length = Math.hypot(dx, dy) || 1;
-
-  entity.body.setLinearVelocity(
-    planck.Vec2((dx / length) * config.speed, (dy / length) * config.speed),
-  );
+  // 补偿屏幕向左滚动，不跟随屏幕离开
+  const drift = scrollSpeed() / PPM;
+  let vx = (dx / length) * config.speed + drift;
+  let vy = (dy / length) * config.speed;
+  // 边界约束：防止飞离屏幕
+  const region = commanderRegion();
+  if (position.x < region.minX + config.radius) vx = Math.max(0.2, vx);
+  if (position.x > region.maxX - config.radius) vx = Math.min(-0.2, vx);
+  if (position.y < region.minY + config.radius) vy = Math.max(0.2, vy);
+  if (position.y > region.maxY - config.radius) vy = Math.min(-0.2, vy);
+  entity.body.setLinearVelocity(planck.Vec2(vx, vy));
 }
 
 function scheduleAllyCommander() {
@@ -277,6 +1024,15 @@ function convertTarget(entity) {
   if (entity.plate && entity.plate.sprite) {
     const plateTexture = entity.plate.sprite._image;
     if (plateTexture) entity.plate.sprite.image(convertedSpriteTexture(plateTexture));
+  }
+
+  if (entity.fanSprite) {
+    entity.fanSprite.remove();
+    entity.fanSprite = null;
+  }
+  if (entity.windSprite) {
+    entity.windSprite.remove();
+    entity.windSprite = null;
   }
 
   if (entity.kind === "target") {
@@ -407,6 +1163,20 @@ function collectAllyCommander(ally) {
 function newWorld() {
   world = planck.World({ gravity: planck.Vec2(0, GRAVITY) });
   world.on("begin-contact", onBeginContact);
+  createGroundBody();
+}
+
+function createGroundBody() {
+  const body = world.createBody({
+    type: "static",
+    position: planck.Vec2(WORLD_W / 2, GROUND_Y + 0.6),
+  });
+  body.createFixture(planck.Box(WORLD_W * 1.5, 0.6), {
+    friction: 0.7,
+    restitution: 0.02,
+    filterCategoryBits: CAT.GROUND,
+    filterMaskBits: CAT.STONE,
+  });
 }
 
 function createEntity(kind, body, fixture, sprite, extra = {}) {
@@ -436,7 +1206,14 @@ function createPlane() {
     restitution: 0,
     isSensor: true,
     filterCategoryBits: CAT.PLANE,
-    filterMaskBits: CAT.TARGET | CAT.PENDULUM | CAT.MAGNET,
+    filterMaskBits: CAT.TARGET | CAT.PENDULUM | CAT.MAGNET | CAT.STONE,
+  });
+  const pushFixture = body.createFixture(planck.Box(0.85, 0.32), {
+    density: 0.5,
+    friction: 0.05,
+    restitution: 0,
+    filterCategoryBits: CAT.PLANE,
+    filterMaskBits: CAT.STONE,
   });
   const sprite = Stage.sprite(planeTexture).appendTo(gameLayer);
   sprite.pin({ pivotX: 0.5, pivotY: 0.5, handleX: 0.5, handleY: 0.5 });
@@ -464,7 +1241,7 @@ function createPlane() {
     alpha: 0,
   });
 
-  return createEntity("plane", body, fixture, sprite, {
+  const planeEntity = createEntity("plane", body, fixture, sprite, {
     invuln: 0,
     visualAngle: 0,
     age: 0,
@@ -480,7 +1257,10 @@ function createPlane() {
     clayBasket: null,
     clayBasketOffset: { x: 0, y: 0 },
     clayBasketAge: 0,
+    soapStuck: 0,
   });
+  pushFixture.setUserData(planeEntity);
+  return planeEntity;
 }
 
 function shoot(angle = 0) {
@@ -519,6 +1299,7 @@ function shoot(angle = 0) {
     deflectTimer: 0,
     deflectVX: 0,
     deflectVY: 0,
+    windAffected: false,
   });
   soundShoot();
 }
@@ -641,6 +1422,23 @@ function spawnTarget() {
   }
 
   createTarget(type);
+}
+
+function trySpawnWaveGem(dt) {
+  if (!waveScript || waveScript.mixed) return;
+
+  waveGemTimer = Math.max(0, waveGemTimer - dt);
+  if (waveGemTimer > 0) return;
+  if (!world || waveGemSpawned >= GEM_SPAWN_CONFIG.singleWaveQuota) return;
+  if (hp > MAX_HP - GEM_SPAWN_CONFIG.singleWaveMinHpMissing) return;
+  const gemAlive = entities.some(
+    (entity) => entity.kind === "target" && entity.targetType === "gem" && !entity.dead,
+  );
+  if (gemAlive) return;
+
+  if (!createTarget("gem")) return;
+  waveGemSpawned += 1;
+  waveGemTimer = GEM_SPAWN_CONFIG.singleWaveInterval;
 }
 
 function resolveLaneY(desiredY, radius, options = {}) {
@@ -1400,6 +2198,8 @@ function beginWave(waveNumber) {
   const plan = single
     ? buildSingleTypeWave(WAVE_TYPE_DEFS[waveNumber - 1])
     : buildMixedWave(waveNumber);
+  waveGemSpawned = 0;
+  waveGemTimer = single ? GEM_SPAWN_CONFIG.singleWaveInterval : 0;
   waveScript = {
     steps: plan.steps,
     index: 0,
@@ -1415,6 +2215,8 @@ function countWaveEnemies() {
   for (const entity of entities) {
     if (entity.dead || entity.kind !== "target" || entity.converted) continue;
     if (entity.targetType === "gem" || entity.targetType === "allyCommander") continue;
+    if (entity.targetType === "galeBalloon" || entity.targetType === "barrierBalloon") continue;
+    if (entity.targetType === "soapBalloon") continue;
     live += 1;
   }
   return live;
@@ -2726,6 +3528,10 @@ function damageTarget(target, bullet) {
       updateHud();
       return;
     }
+    if (target.targetType === "barrierBalloon") {
+      destroyBarrierBalloon(target);
+      return;
+    }
     markDead(target);
     score += target.points;
     spawnExplosion(position.x, position.y, target.targetType);
@@ -2743,6 +3549,17 @@ function hitPlane(target, point = null) {
   if (!plane || plane.dead || plane.invuln > 0 || target.dead || target.puffed) return;
   if (target.converted || target.targetType === "allyCommander") return;
   const position = target.body.getPosition();
+  if (target.kind === "stone") {
+    spawnSparks(position.x, position.y);
+    shake = Math.max(shake, 10);
+    soundClank();
+    hurtPlayer();
+    return;
+  }
+  if (target.kind === "barrierBalloon") {
+    hitPlaneByBarrier(target, point);
+    return;
+  }
   if (target.targetType === "commander") {
     markDead(target);
     score += target.points;
@@ -2813,6 +3630,35 @@ function hitPlane(target, point = null) {
   shake = Math.max(shake, 12);
   soundExplosion(false);
   hurtPlayer();
+}
+
+function destroyBarrierBalloon(target) {
+  if (!target || target.dead) return;
+  const position = target.body.getPosition();
+  markDead(target);
+  score += target.points;
+  spawnExplosion(position.x, position.y, "steelBalloon");
+  spawnParticles(
+    position.x * PPM,
+    position.y * PPM,
+    ["#ffffff", "#c3d2e4", "#ffd166", "#7d8ea3"],
+    20,
+    70,
+    240,
+  );
+  shake = Math.max(shake, 10);
+  soundExplosion(false);
+  updateHud();
+}
+
+function hitPlaneByBarrier(barrier, point = null) {
+  if (!plane || plane.dead || plane.invuln > 0 || barrier.dead) return;
+  const position = point || barrier.body.getPosition();
+  spawnSparks(position.x, position.y);
+  shake = Math.max(shake, 12);
+  soundClank();
+  hurtPlayer();
+  destroyBarrierBalloon(barrier);
 }
 
 function attachClayBasket(point, planePosition) {
@@ -2992,6 +3838,14 @@ function onBeginContact(contact) {
       hitPlaneBySteelPlate(other);
       return;
     }
+    if (other.kind === "stone") {
+      hitPlane(other, contactWorldPoint(contact));
+      return;
+    }
+    if (other.kind === "barrierBalloon") {
+      hitPlaneByBarrier(other, contactWorldPoint(contact));
+      return;
+    }
     if (other.targetType === "allyCommander") {
       startConversion();
       collectAllyCommander(other);
@@ -3021,6 +3875,10 @@ function onBeginContact(contact) {
     }
     if (other.kind === "steelPlate") {
       hitSteelPlate(bulletEntity, other, contact);
+      return;
+    }
+    if (other.kind === "barrierBalloon") {
+      damageTarget(other, bulletEntity);
       return;
     }
     if (isHazard(other)) damageTarget(other, bulletEntity);
@@ -3067,10 +3925,21 @@ function cleanupDead() {
     if (!entity.dead) continue;
     if (entity === commander) commander = null;
     if (entity === allyCommander) allyCommander = null;
+    if (entity === barrierBalloon) barrierBalloon = null;
+    if (entity === galeBalloon) galeBalloon = null;
+    if (entity === soapBalloon) soapBalloon = null;
     entity.sprite.remove();
     if (entity.chute) entity.chute.remove();
     if (entity.gasTint) entity.gasTint.remove();
     if (entity.halo) entity.halo.remove();
+    if (entity.fanSprite) {
+      entity.fanSprite.remove();
+      entity.fanSprite = null;
+    }
+    if (entity.windSprite) {
+      entity.windSprite.remove();
+      entity.windSprite = null;
+    }
     if (entity.convertAura) {
       entity.convertAura.remove();
       entity.convertAura = null;
@@ -3106,6 +3975,8 @@ function autopilotRadius(entity) {
   if (entity.targetType === "duo") return DUO_CONFIG.radius;
   if (entity.targetType === "springBalloon") return SPRING_BOMB_CONFIG.radius;
   if (entity.targetType === "steelBalloon" && !entity.plate?.dead) return 0.95;
+  if (entity.targetType === "galeBalloon") return GALE_CONFIG.radius;
+  if (entity.targetType === "soapBalloon") return SOAP_CONFIG.radius;
   const config = TARGET_CONFIG[entity.targetType];
   return config ? config.radius : 0.4;
 }
@@ -3177,6 +4048,41 @@ function autopilotChargeFuture(entity, chargeConfig, planePosition) {
   return future;
 }
 
+function computeThreat(entity, planePosition) {
+  if (!planePosition) return 0;
+  const kind = entity.kind;
+  const type = entity.targetType;
+  if (kind === "plane" || kind === "bullet" || kind === "gas" || kind === "stone") return 0;
+  if (type === "allyCommander" || type === "gem") return 0;
+  if (entity.dead || entity.converted || entity.puffed) return 0;
+
+  const position = entity.body.getPosition();
+  const distance = Math.hypot(position.x - planePosition.x, position.y - planePosition.y);
+  const config = TARGET_CONFIG[type];
+  const baseHp = config ? config.hp : 1;
+  const baseSpeed = config ? config.speed : 1;
+
+  let threat = baseHp * 2 + baseSpeed;
+  threat += Math.max(0, 10 - distance) * 1.5;
+
+  if (kind === "magnet" || kind === "pendulum") threat *= 1.5;
+  if (kind === "barrierBalloon") threat *= 1.5;
+  if (type === "commander") threat *= 2.0;
+  if (type === "bomber") threat *= 1.6;
+  if (type === "duo") threat *= 1.7;
+  if (type === "gasBalloon") threat *= 1.3;
+  if (type === "clayBalloon" || type === "invisible") threat *= 1.4;
+  if (type === "steelBalloon" && entity.plate && !entity.plate.dead) threat *= 1.3;
+  if (type === "springBalloon") threat *= 1.2;
+  if (type === "galeBalloon") threat *= 1.6;
+  if (type === "soapBalloon") threat *= 1.6;
+  if (entity.charging) threat *= 1.6;
+  if (entity.falling) threat *= 0.5;
+  if (entity.entering) threat *= 0.7;
+
+  return threat;
+}
+
 function autopilotScan(px, py) {
   const config = AUTOPILOT_CONFIG;
   const planePosition = { x: px, y: py };
@@ -3203,6 +4109,22 @@ function autopilotScan(px, py) {
     }
     return future;
   };
+
+  const stoneFuture = (x, y, vx, vy) => {
+    const restY = GROUND_Y - STONE_CONFIG.height * 0.5;
+    const gravity = GRAVITY * STONE_CONFIG.gravityScale;
+    const future = [{ x, y }];
+    for (let i = 1; i <= config.samples; i += 1) {
+      const t = config.horizon * (i / config.samples);
+      future.push({
+        x: x + vx * t,
+        y: Math.min(restY, y + vy * t + 0.5 * gravity * t * t),
+      });
+    }
+    return future;
+  };
+
+  const stoneThreats = [];
 
   const snakeLeaders = new Map();
   for (const entity of entities) {
@@ -3272,6 +4194,24 @@ function autopilotScan(px, py) {
       continue;
     }
 
+    if (entity.kind === "stone") {
+      const point = entity.body.getPosition();
+      const velocity = entity.body.getLinearVelocity();
+      const distance = Math.hypot(point.x - px, point.y - py);
+      const range = entity.landed ? config.stoneGroundScanRange : config.stoneScanRange;
+      if (distance > range) continue;
+      stoneThreats.push({
+        distance,
+        ground: !!entity.landed,
+        threat: {
+          future: stoneFuture(point.x, point.y, velocity.x, velocity.y),
+          radius: config.stoneRadius,
+          weight: entity.landed ? config.stoneGroundWeight : config.stoneAirWeight,
+        },
+      });
+      continue;
+    }
+
     if (entity.kind !== "target" || entity.puffed) continue;
 
     const point = entity.body.getPosition();
@@ -3283,7 +4223,11 @@ function autopilotScan(px, py) {
     }
 
     if (entity.targetType === "gem") {
-      if (point.x > px - 1.5 && point.x < px + 10) {
+      if (
+        point.x > px - 1.5 &&
+        point.x <= WORLD_W - config.engageMargin &&
+        point.x < px + config.gemLookAhead
+      ) {
         const score = Math.hypot((point.x - px) * 0.45, point.y - py);
         if (score < gemScore) {
           gemScore = score;
@@ -3292,6 +4236,8 @@ function autopilotScan(px, py) {
       }
       continue;
     }
+
+    if (point.x > WORLD_W - config.engageMargin) continue;
 
     const radius = autopilotRadius(entity);
     const shielded =
@@ -3329,10 +4275,18 @@ function autopilotScan(px, py) {
       plateHp: shielded ? entity.plate.hp : 0,
       formation,
       danger,
+      threat: computeThreat(entity, planePosition),
     });
   }
 
-  return { threats, targets, gem, ally };
+  if (stoneThreats.length > config.stoneThreatLimit) {
+    stoneThreats.sort((a, b) => a.distance - b.distance);
+    stoneThreats.length = config.stoneThreatLimit;
+  }
+  for (const entry of stoneThreats) threats.push(entry.threat);
+  const groundStones = stoneThreats.reduce((sum, entry) => sum + (entry.ground ? 1 : 0), 0);
+
+  return { threats, targets, gem, ally, groundStones };
 }
 
 function autopilotPathRisk(px, py, targetX, targetY, threats) {
@@ -3393,22 +4347,15 @@ function autopilotBlocker(targets, px, py, planeVX, planeVY, chosen) {
 function autopilotAim(targets, px, py, planeVX, planeVY) {
   const config = AUTOPILOT_CONFIG;
   let best = null;
-  let bestScore = Infinity;
+  let bestScore = -Infinity;
   for (const target of targets) {
     const dx = target.x - px;
-    if (dx < 0.9 || dx > config.fireRange) continue;
-    const approach = target.vx < -0.1 ? -target.vx : 1;
-    const closing = config.bulletSpeed + Math.max(0, planeVX) - Math.min(0, target.vx);
-    const flight = Math.max(0.03, (dx - 1) / closing);
-    const aimY = autopilotSampleY(target, flight);
-    let score = dx / approach + Math.abs(aimY - py) * 0.4;
-    if (target.commander) score -= 0.8;
-    if (target.shielded) score += target.plateHp * config.shieldPenalty;
-    if (target.danger) score -= target.danger;
-    if (target.formation === "shieldWall" || target.formation === "superShield") {
-      score += config.wallPenalty;
-    }
-    if (score < bestScore) {
+    if (dx < 0.4 || dx > config.fireRange) continue;
+    const threat = target.threat || 0;
+    const shield = target.shielded ? config.shieldPenalty * 2 : 0;
+    // 威胁越高、距离越近、越优先被射击
+    const score = threat * 2 - dx * 0.05 - shield;
+    if (score > bestScore) {
       bestScore = score;
       best = target;
     }
@@ -3418,16 +4365,16 @@ function autopilotAim(targets, px, py, planeVX, planeVY) {
   return blocker || best;
 }
 
-function autopilotGoal(px, py, threats, targets, aim, gem, ally, planeVX = 0) {
+function autopilotGoal(px, py, threats, targets, aim, gem, ally, planeVX = 0, groundStones = 0) {
   const config = AUTOPILOT_CONFIG;
-  const candidatesX = [px, px - config.retreatStep, px + config.retreatStep, config.homeX];
-  for (const target of targets) {
-    if (target.commander && hp > 1) candidatesX.push(target.x - 6.5);
-  }
+  const candidatesX = [px, px + config.retreatStep, config.homeX, px - config.retreatStep];
   if (gem) candidatesX.push(gem.x);
   if (ally) candidatesX.push(ally.x);
   if (aim && aim.shielded && aim.x - px < config.shieldStandoff) {
-    candidatesX.push(px - config.retreatStep * 2);
+    candidatesX.push(px - config.retreatStep * 1.5);
+  }
+  if (aim) {
+    candidatesX.push(clamp(aim.x - config.engageStandoff, config.minX, config.maxX));
   }
 
   const aimY = aim
@@ -3449,10 +4396,14 @@ function autopilotGoal(px, py, threats, targets, aim, gem, ally, planeVX = 0) {
     const cx = clamp(rawX, config.minX, config.maxX);
     for (let step = -config.ySteps; step <= config.ySteps; step += 1) {
       const cy = clamp(py + step * config.yStep, config.minY, config.maxY);
-      let cost = autopilotPathRisk(px, py, cx, cy, threats);
+      let cost = autopilotPathRisk(px, py, cx, cy, threats) * config.riskWeight;
       cost += config.travelWeight * Math.hypot((cx - px) * 0.7, cy - py);
       if (cx > config.homeX) cost += config.laneWeight * (cx - config.homeX);
       if (aim) cost += config.aimWeight * Math.min(3, Math.abs(cy - aimY));
+      if (groundStones > 0) {
+        const low = clamp((cy - (GROUND_Y - config.stoneLowBand)) / config.stoneLowBand, 0, 1);
+        cost += config.stoneLowPenalty * low * Math.min(4, groundStones) * 0.7;
+      }
       if (wantGem) {
         const d = Math.hypot(cx - gem.x, cy - gem.y);
         if (d < 2.4) cost -= config.gemReward * (1 - d / 2.4);
@@ -3478,25 +4429,89 @@ function autopilotControls() {
   const px = position.x;
   const py = position.y;
 
-  const { threats, targets, gem, ally } = autopilotScan(px, py);
+  const { threats, targets, gem, ally, groundStones } = autopilotScan(px, py);
   const aim = autopilotAim(targets, px, py, velocity.x, velocity.y);
-  const goal = autopilotGoal(px, py, threats, targets, aim, gem, ally, velocity.x);
+  const goal = autopilotGoal(
+    px,
+    py,
+    threats,
+    targets,
+    aim,
+    gem,
+    ally,
+    velocity.x,
+    groundStones,
+  );
 
-  const targetVy = clamp((goal.y - py) * 6, -6, 8.5);
-  if (velocity.y < targetVy - 0.4) controls.down = true;
-  else if (velocity.y > targetVy + 0.4) controls.up = true;
+  // 预测式回避：沿威胁未来轨迹评估最近接近距离，越近、越早发生越紧急
+  let evadeX = 0;
+  let evadeY = 0;
+  let evadeActive = false;
+  const threatStep = config.horizon / config.samples;
+  const reactSamples = Math.max(
+    1,
+    Math.min(config.samples, Math.ceil(config.evadeReactTime / threatStep)),
+  );
+  for (const threat of threats) {
+    const weight = threat.weight || 1;
+    const future = threat.future || [];
+    const radius = threat.radius || 0;
+    let urgency = 0;
+    let dirX = 0;
+    let dirY = 0;
+    for (let i = 0; i <= reactSamples && i < future.length; i += 1) {
+      const point = future[i];
+      const dx = px - point.x;
+      const dy = py - point.y;
+      const dist = Math.max(0, Math.hypot(dx, dy) - radius);
+      if (dist >= config.evadeDistance) continue;
+      const timeFactor = 1 - 0.6 * ((i * threatStep) / config.horizon);
+      const local =
+        ((config.evadeDistance - dist) / config.evadeDistance) * timeFactor * weight;
+      if (local > urgency) {
+        urgency = local;
+        const length = Math.hypot(dx, dy);
+        if (length > 0.01) {
+          dirX = dx / length;
+          dirY = dy / length;
+        }
+      }
+    }
+    if (urgency <= 0) continue;
+    evadeX += dirX * urgency;
+    evadeY += dirY * urgency;
+    if (urgency > config.evadeUrgency) evadeActive = true;
+  }
 
-  const targetVx = clamp((goal.x - px) * 4, -4.5, 4.5);
-  if (velocity.x < targetVx - 0.3) controls.right = true;
-  else if (velocity.x > targetVx + 0.3) controls.left = true;
+  // 适度的纵向追击：优先对齐射击目标高度
+  const targetVy = aim
+    ? clamp((aim.y - py) * 4, -4, 5)
+    : clamp((goal.y - py) * 4, -4, 5);
+  // 紧急回避时改用回避方向，不再朝目标高度靠拢
+  const finalVy = evadeActive ? clamp(evadeY * config.evadeBoost, -7, 7) : targetVy;
+  if (velocity.y < finalVy - 0.3) controls.down = true;
+  else if (velocity.y > finalVy + 0.3) controls.up = true;
 
-  if (aim) {
+  // 保持交战距离：只推进到目标前方 standoff 处，绝不压到右侧边缘
+  const engageX = aim
+    ? clamp(aim.x - config.engageStandoff, config.minX, config.maxX)
+    : goal.x;
+  const cruiseVx = clamp((engageX - px) * 2.6, -3.5, 2.6);
+  // 紧急回避时叠加回避速度，且禁止继续向右突进
+  const finalVx = evadeActive
+    ? clamp(evadeX * config.evadeBoost - config.evadeBackBias, -8, 0.8)
+    : cruiseVx;
+  if (velocity.x < finalVx - 0.25) controls.right = true;
+  else if (velocity.x > finalVx + 0.25) controls.left = true;
+
+  if (aim && (!evadeActive || aim.x - px <= config.closeFireRange)) {
     const dx = aim.x - px;
     const closing = config.bulletSpeed + Math.max(0, velocity.x) - Math.min(0, aim.vx);
     const flight = Math.max(0.03, (dx - 1) / closing);
     const targetY = autopilotSampleY(aim, flight);
     const bulletY = py + velocity.y * 0.25 * flight;
     const tolerance = config.fireTolerance + dx * config.fireGain;
+    // 对齐后开火，容忍度适中
     if (Math.abs(targetY - bulletY) < tolerance) controls.fire = true;
   }
 
@@ -3604,6 +4619,8 @@ function snakeSteer(entity, dt) {
 function stepPhysics(dt) {
   gameTime += dt;
 
+  updateSpecialBalloons(dt);
+
   if (powerTimer > 0) powerTimer = Math.max(0, powerTimer - dt);
   while (score >= nextPowerScore) triggerPowerUp();
 
@@ -3643,11 +4660,30 @@ function stepPhysics(dt) {
 
     if (clayLocked) ay = 0;
 
+    // 肥皂泡粘附在机身：抵消玩家的向上操作，并提供额外浮力
+    const soapStuck = plane.soapStuck || 0;
+    if (soapStuck > 0 && ay < 0) ay = 0;
+
     const fx = ax * gravityForce * 1.5;
     const fy = ay < 0 ? ay * gravityForce * 2.6 : ay * gravityForce * 1.7;
 
     if (fx !== 0 || fy !== 0) {
       plane.body.applyForceToCenter(planck.Vec2(fx, fy), true);
+    }
+
+    if (soapStuck > 0) {
+      const lift = Math.min(1, soapStuck / SOAP_CONFIG.maxStuck);
+      plane.body.applyForceToCenter(
+        planck.Vec2(0, -mass * SOAP_CONFIG.liftAccel * lift),
+        true,
+      );
+    }
+
+    if (inGaleWind(planePoint.x, planePoint.y)) {
+      plane.body.applyForceToCenter(
+        planck.Vec2(-mass * GALE_CONFIG.planeAccel, 0),
+        true,
+      );
     }
 
     fireTimer -= dt;
@@ -3685,6 +4721,7 @@ function stepPhysics(dt) {
 
   for (const entity of entities) {
     if (entity.kind === "target") {
+      entity.threat = computeThreat(entity, planePosition);
       entity.age += dt;
       if (entity.flash > 0) entity.flash = Math.max(0, entity.flash - dt);
       if (entity.plate && entity.plate.flash > 0) {
@@ -3728,6 +4765,64 @@ function stepPhysics(dt) {
         const snakeVelocity = snakeSteer(entity, dt);
         vx = snakeVelocity.vx;
         vy = snakeVelocity.vy;
+      } else if (entity.targetType === "galeBalloon" && !entity.puffed) {
+        const region = galeRegion();
+
+        if (!entity.wander) entity.wander = nextGalePoint();
+        const toWander = Math.hypot(
+          entity.wander.x - position.x,
+          entity.wander.y - position.y,
+        );
+        if (
+          toWander < GALE_CONFIG.retargetDistance ||
+          position.x < region.minX ||
+          position.x > region.maxX ||
+          position.y < region.minY ||
+          position.y > region.maxY
+        ) {
+          entity.wander = nextGalePoint();
+        }
+        const dx = entity.wander.x - position.x;
+        const dy = entity.wander.y - position.y;
+        const length = Math.hypot(dx, dy) || 1;
+        // 补偿屏幕向左滚动，不跟随屏幕离开
+        const drift = scrollSpeed() / PPM;
+        vx = (dx / length) * entity.speed + drift;
+        vy = (dy / length) * entity.speed + Math.sin(entity.age * 2.4 + entity.phase) * 0.3;
+        // 边界约束：防止飞离屏幕
+        if (position.x < region.minX + GALE_CONFIG.radius) vx = Math.max(0.2, vx);
+        if (position.x > region.maxX - GALE_CONFIG.radius) vx = Math.min(-0.2, vx);
+        if (position.y < region.minY + GALE_CONFIG.radius) vy = Math.max(0.2, vy);
+        if (position.y > region.maxY - GALE_CONFIG.radius) vy = Math.min(-0.2, vy);
+      } else if (entity.targetType === "soapBalloon" && !entity.puffed) {
+        const region = soapRegion();
+
+        if (!entity.wander) entity.wander = nextSoapPoint();
+        const toWander = Math.hypot(
+          entity.wander.x - position.x,
+          entity.wander.y - position.y,
+        );
+        if (
+          toWander < SOAP_CONFIG.retargetDistance ||
+          position.x < region.minX ||
+          position.x > region.maxX ||
+          position.y < region.minY ||
+          position.y > region.maxY
+        ) {
+          entity.wander = nextSoapPoint();
+        }
+        const dx = entity.wander.x - position.x;
+        const dy = entity.wander.y - position.y;
+        const length = Math.hypot(dx, dy) || 1;
+        // 补偿屏幕向左滚动，不跟随屏幕离开
+        const drift = scrollSpeed() / PPM;
+        vx = (dx / length) * entity.speed + drift;
+        vy = (dy / length) * entity.speed + Math.sin(entity.age * 2.4 + entity.phase) * 0.3;
+        // 边界约束：防止飞离屏幕
+        if (position.x < region.minX + SOAP_CONFIG.radius) vx = Math.max(0.2, vx);
+        if (position.x > region.maxX - SOAP_CONFIG.radius) vx = Math.min(-0.2, vx);
+        if (position.y < region.minY + SOAP_CONFIG.radius) vy = Math.max(0.2, vy);
+        if (position.y > region.maxY - SOAP_CONFIG.radius) vy = Math.min(-0.2, vy);
       } else if (
         entity.targetType === "invisible" &&
         !entity.puffed &&
@@ -3868,7 +4963,7 @@ function stepPhysics(dt) {
         }
       }
 
-      if (entity.entering) {
+      if (entity.entering && entity.entryWaypoint) {
         const waypoint = entity.entryWaypoint;
         const dx = waypoint.x - position.x;
         const dy = waypoint.y - position.y;
@@ -3879,6 +4974,10 @@ function stepPhysics(dt) {
           vx = (dx / length) * entity.speed;
           vy = (dy / length) * entity.speed;
         }
+      }
+
+      if (!entity.converted && entity.targetType !== "galeBalloon" && inGaleWind(position.x, position.y)) {
+        vx -= GALE_CONFIG.balloonPush;
       }
 
       entity.body.setLinearVelocity(planck.Vec2(vx, vy));
@@ -3913,9 +5012,32 @@ function stepPhysics(dt) {
       if (entity.deflectTimer > 0) {
         entity.deflectTimer = Math.max(0, entity.deflectTimer - dt);
         entity.body.setLinearVelocity(planck.Vec2(entity.deflectVX, entity.deflectVY));
+      } else {
+        const windPoint = entity.body.getPosition();
+        if (inGaleWind(windPoint.x, windPoint.y)) {
+          entity.windAffected = true;
+          const velocity = entity.body.getLinearVelocity();
+          const dragStep = GALE_CONFIG.bulletDrag * dt;
+          const vx =
+            Math.abs(velocity.x) <= dragStep
+              ? 0
+              : velocity.x - Math.sign(velocity.x) * dragStep;
+          const vy = velocity.y + GALE_CONFIG.bulletFall * dt;
+          entity.body.setLinearVelocity(planck.Vec2(vx, vy));
+        }
       }
       const position = entity.body.getPosition();
-      if (entity.life <= 0 || position.x > WORLD_W + 0.8 || position.x < -0.8) entity.dead = true;
+      if (
+        entity.life <= 0 ||
+        position.x > WORLD_W + 0.8 ||
+        position.x < -0.8 ||
+        position.y > WORLD_H + 0.8
+      )
+        entity.dead = true;
+      if (entity.windAffected && !entity.dead && position.y >= GROUND_Y - 0.05) {
+        spawnSparks(position.x, position.y);
+        entity.dead = true;
+      }
     }
   }
 
@@ -3939,6 +5061,8 @@ function stepPhysics(dt) {
       if (!conversionActive && (!allyCommander || allyCommander.dead)) spawnAllyCommander();
     }
   }
+
+  trySpawnWaveGem(dt);
 
   spawnTimer -= dt;
   if (spawnTimer <= 0) {
@@ -4047,6 +5171,29 @@ function syncEntities(dt) {
           alpha: entity.flash > 0 ? 0.35 : 1,
         });
       }
+      if (entity.targetType === "galeBalloon") {
+        entity.fanAngle += dt * (entity.windActive ? GALE_CONFIG.fanSpin : GALE_CONFIG.fanSpinIdle);
+        const fanPxX = px + entity.fanOffsetX * PPM;
+        const fanPxY = py + entity.fanOffsetY * PPM;
+        if (entity.fanSprite) {
+          entity.fanSprite.pin({
+            offsetX: fanPxX,
+            offsetY: fanPxY,
+            rotation: entity.fanAngle,
+            alpha: entity.flash > 0 ? 0.5 : entity.windActive ? 1 : 0.7,
+          });
+        }
+        if (entity.windSprite) {
+          const gust = 0.5 + 0.5 * Math.sin(entity.age * 7 + entity.phase);
+          entity.windSprite.pin({
+            offsetX: fanPxX,
+            offsetY: fanPxY,
+            scaleX: GALE_CONFIG.windRangeScale,
+            scaleY: GALE_CONFIG.windRangeScale,
+            alpha: entity.windActive ? 0.08 + gust * 0.14 : 0,
+          });
+        }
+      }
       if (entity.plate && !entity.plate.dead) {
         entity.plate.sprite.pin({
           offsetX: px + entity.plate.offsetPxX,
@@ -4082,6 +5229,23 @@ function syncEntities(dt) {
         scaleX: entity.scale * pulse,
         scaleY: entity.scale * (2 - pulse),
         alpha: entity.alpha,
+      });
+    } else if (entity.kind === "stone") {
+      entity.sprite.pin({
+        offsetX: px,
+        offsetY: py,
+        rotation: entity.body.getAngle(),
+        scaleX: entity.scaleX,
+        scaleY: entity.scaleY,
+      });
+    } else if (entity.kind === "barrierBalloon") {
+      const tilt = Math.sin(entity.age * 1.6 + entity.phase) * 0.07;
+      entity.tiltAngle = tilt;
+      entity.sprite.pin({
+        offsetX: px,
+        offsetY: py,
+        rotation: tilt,
+        alpha: entity.flash > 0 ? 0.35 : 1,
       });
     } else {
       if (entity.chute) {
@@ -4164,6 +5328,8 @@ function cleanupAll() {
     if (entity.chute) entity.chute.remove();
     if (entity.gasTint) entity.gasTint.remove();
     if (entity.halo) entity.halo.remove();
+    if (entity.fanSprite) entity.fanSprite.remove();
+    if (entity.windSprite) entity.windSprite.remove();
     if (entity.convertAura) entity.convertAura.remove();
     if (entity.plate && !entity.plate.dead) entity.plate.sprite.remove();
     if (entity.pullDots) {
@@ -4172,6 +5338,12 @@ function cleanupAll() {
   }
   clearParticles();
   entities = [];
+  stones = [];
+  barrierBalloon = null;
+  galeBalloon = null;
+  soapBalloon = null;
+  clearSoapBubbles();
+  specialBalloonWave = 0;
   plane = null;
   commander = null;
   allyCommander = null;
@@ -4199,9 +5371,21 @@ function startGame() {
   autopilotRestart = 0;
   allySpawnTimer = 0;
   conversionActive = false;
+  barrierBalloon = null;
+  galeBalloon = null;
+  soapBalloon = null;
+  clearSoapBubbles();
+  specialBalloonWave = 0;
+  plane = null;
+  stones = [];
 
   plane = createPlane();
   state = "playing";
+  // 第一波立即生成一个随机特殊气球
+  if (!specialBalloonAlive() && wave >= SPECIAL_BALLOON_CONFIG.minWave) {
+    const spawned = spawnSpecialBalloon();
+    if (spawned) specialBalloonWave = wave;
+  }
   hideOverlay();
   updateHint();
   updateHud();
@@ -4235,10 +5419,14 @@ gameLayer.tick((elapsed) => {
 
   if (state === "playing") {
     accumulator = Math.min(accumulator + dt, 0.2);
-    while (accumulator >= STEP && state === "playing") {
+    let steps = 0;
+    while (accumulator >= STEP && state === "playing" && steps < MAX_STEPS_PER_FRAME) {
       stepPhysics(STEP);
       accumulator -= STEP;
+      steps += 1;
     }
+    // 单帧物理步数封顶，避免卡顿时的追帧雪崩
+    if (accumulator >= STEP) accumulator = 0;
     syncEntities(dt);
   } else {
     syncEntities(dt);

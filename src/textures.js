@@ -1,4 +1,4 @@
-import { VIEW_W, VIEW_H, PLANE_COLORS, BALLOON_COLORS, GAS_BALLOON_COLORS, CLAY_BALLOON_COLORS, SPRING_BALLOON_COLORS, SPRING_BOMB_COLORS, PENDULUM_BALLOON_COLORS, PENDULUM_COLORS, MAGNET_BALLOON_COLORS, MAGNET_COLORS, WHITE_BALLOON_COLORS, GEM_COLORS, BULLET_COLORS, POWER_BULLET_COLORS, CLOUD_COLORS, BOMBER_COLORS, BOMB_COLORS, DUO_BALLOON_COLORS, COMMANDER_BALLOON_COLORS, ALLY_COMMANDER_BALLOON_COLORS, COMMANDER_HALO_PALETTE, ALLY_HALO_PALETTE, CONVERTED_TINT, CONVERTED_GLOW, POWER_HALO_PALETTE, MINE_BALLOON_COLORS, STEEL_BALLOON_COLORS, STEEL_PLATE_COLORS, PARACHUTE_COLORS, PLANE_ROWS, BALLOON_ROWS, STEEL_BALLOON_ROWS, COMMANDER_ROWS, WHITE_BALLOON_ROWS, GEM_ROWS, BULLET_ROWS, CLOUD_ROWS, BOMB_ROWS, PARACHUTE_ROWS, BOMBER_ROWS } from "./config.js";
+import { VIEW_W, VIEW_H, PLANE_COLORS, BALLOON_COLORS, GAS_BALLOON_COLORS, CLAY_BALLOON_COLORS, SPRING_BALLOON_COLORS, SPRING_BOMB_COLORS, PENDULUM_BALLOON_COLORS, PENDULUM_COLORS, MAGNET_BALLOON_COLORS, MAGNET_COLORS, WHITE_BALLOON_COLORS, GEM_COLORS, BULLET_COLORS, POWER_BULLET_COLORS, CLOUD_COLORS, BOMBER_COLORS, BOMB_COLORS, DUO_BALLOON_COLORS, COMMANDER_BALLOON_COLORS, ALLY_COMMANDER_BALLOON_COLORS, COMMANDER_HALO_PALETTE, ALLY_HALO_PALETTE, CONVERTED_TINT, CONVERTED_GLOW, POWER_HALO_PALETTE, MINE_BALLOON_COLORS, STEEL_BALLOON_COLORS, GALE_BALLOON_COLORS, GALE_FAN_COLORS, SOAP_BALLOON_COLORS, STEEL_PLATE_COLORS, PARACHUTE_COLORS, PLANE_ROWS, BALLOON_ROWS, STEEL_BALLOON_ROWS, COMMANDER_ROWS, WHITE_BALLOON_ROWS, GEM_ROWS, BULLET_ROWS, CLOUD_ROWS, BOMB_ROWS, PARACHUTE_ROWS, BOMBER_ROWS, BARRIER_ROWS, BARRIER_COLORS, STONE_ROWS, STONE_COLORS } from "./config.js";
 const Stage = window.Stage;
 
 function makeTexture(rows, colors, scale = 3) {
@@ -420,6 +420,163 @@ function makeMagnetTexture() {
   return new Stage.ImageTexture(canvas);
 }
 
+const GALE_FAN_TEX = {
+  size: 64,
+  radius: 29,
+  blades: 6,
+  hub: 9,
+  cell: 2,
+};
+
+function makeGaleFanTexture() {
+  const { size, radius, blades, hub, cell } = GALE_FAN_TEX;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const cx = size / 2;
+  const cy = size / 2;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  for (let i = 0; i < blades; i += 1) {
+    ctx.save();
+    ctx.rotate((i / blades) * Math.PI * 2);
+    ctx.beginPath();
+    ctx.moveTo(-4, -6);
+    ctx.lineTo(-13, -radius + 2);
+    ctx.lineTo(-4, -radius);
+    ctx.lineTo(9, -radius + 7);
+    ctx.lineTo(7, -12);
+    ctx.closePath();
+    ctx.fillStyle = GALE_FAN_COLORS.m;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = GALE_FAN_COLORS.k;
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.restore();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = GALE_FAN_COLORS.k;
+  ctx.stroke();
+
+  drawPixelDisc(ctx, cx, cy, hub + 3, GALE_FAN_COLORS.k, cell);
+  drawPixelDisc(ctx, cx, cy, hub, GALE_FAN_COLORS.l, cell);
+  drawPixelDisc(ctx, cx, cy, hub - 3.5, GALE_FAN_COLORS.a, cell);
+
+  return new Stage.ImageTexture(canvas);
+}
+
+const GALE_WIND_TEX = {
+  width: 480,
+  height: 640,
+  apexX: 480,
+  apexY: 320,
+};
+
+function makeGaleWindTexture() {
+  const { width, height, apexX, apexY } = GALE_WIND_TEX;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  const gradient = ctx.createRadialGradient(apexX, apexY, 12, apexX, apexY, width);
+  gradient.addColorStop(0, "rgba(126,249,255,0.34)");
+  gradient.addColorStop(0.45, "rgba(126,249,255,0.14)");
+  gradient.addColorStop(1, "rgba(126,249,255,0)");
+
+  ctx.beginPath();
+  ctx.moveTo(apexX, apexY);
+  ctx.lineTo(0, 0);
+  ctx.lineTo(0, height);
+  ctx.closePath();
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(191,240,255,0.32)";
+  ctx.lineWidth = 3;
+  for (let i = 1; i <= 5; i += 1) {
+    const t = i / 6;
+    const half = (height / 2) * t;
+    ctx.beginPath();
+    ctx.moveTo(apexX - width * t, apexY - half);
+    ctx.lineTo(apexX - width * t, apexY + half);
+    ctx.stroke();
+  }
+
+  return new Stage.ImageTexture(canvas);
+}
+
+const SOAP_BUBBLE_TEX = {
+  size: 48,
+};
+
+function makeSoapBubbleTexture() {
+  const { size } = SOAP_BUBBLE_TEX;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = size / 2 - 1.5;
+
+  const body = ctx.createRadialGradient(
+    cx - radius * 0.3,
+    cy - radius * 0.32,
+    radius * 0.12,
+    cx,
+    cy,
+    radius,
+  );
+  body.addColorStop(0, "rgba(234,254,255,0.10)");
+  body.addColorStop(0.6, "rgba(200,240,255,0.20)");
+  body.addColorStop(0.86, "rgba(160,220,255,0.40)");
+  body.addColorStop(1, "rgba(127,216,245,0.30)");
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fillStyle = body;
+  ctx.fill();
+
+  const rim = ctx.createLinearGradient(0, 0, size, size);
+  rim.addColorStop(0, "rgba(255,190,230,0.55)");
+  rim.addColorStop(0.35, "rgba(255,240,180,0.45)");
+  rim.addColorStop(0.7, "rgba(170,255,220,0.50)");
+  rim.addColorStop(1, "rgba(150,200,255,0.55)");
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius - 1, 0, Math.PI * 2);
+  ctx.lineWidth = 2.4;
+  ctx.strokeStyle = rim;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.ellipse(
+    cx - radius * 0.34,
+    cy - radius * 0.36,
+    radius * 0.30,
+    radius * 0.20,
+    -0.7,
+    0,
+    Math.PI * 2,
+  );
+  ctx.fillStyle = "rgba(255,255,255,0.72)";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(cx + radius * 0.32, cy + radius * 0.30, radius * 0.09, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255,255,255,0.45)";
+  ctx.fill();
+
+  return new Stage.ImageTexture(canvas);
+}
+
 const SPRING_BOMB_TEX = {
   width: 36,
   height: 48,
@@ -492,6 +649,10 @@ function makeSpringBombTexture() {
 
   return new Stage.ImageTexture(canvas);
 }
+
+const BARRIER_TEXTURE = makeTexture(BARRIER_ROWS, BARRIER_COLORS, 3);
+
+const stoneTexture = makeTexture(STONE_ROWS, STONE_COLORS, 2);
 
 const STEEL_PLATE_TEX = {
   width: 48,
@@ -721,6 +882,11 @@ const springBalloonTexture = makeTexture(BALLOON_ROWS, SPRING_BALLOON_COLORS, 3)
 const springBombTexture = makeSpringBombTexture();
 const steelBalloonTexture = makeTexture(STEEL_BALLOON_ROWS, STEEL_BALLOON_COLORS, 3);
 const steelPlateTexture = makeSteelPlateTexture();
+const galeBalloonTexture = makeTexture(BALLOON_ROWS, GALE_BALLOON_COLORS, 3);
+const soapBalloonTexture = makeTexture(BALLOON_ROWS, SOAP_BALLOON_COLORS, 3);
+const soapBubbleTexture = makeSoapBubbleTexture();
+const galeFanTexture = makeGaleFanTexture();
+const galeWindTexture = makeGaleWindTexture();
 const gasTexture = makeGasTexture();
 const commanderHaloTexture = makeCommanderHaloTexture();
 const allyHaloTexture = makeCommanderHaloTexture(ALLY_HALO_PALETTE);
@@ -810,4 +976,76 @@ function dotTexture(color) {
   return dotTextures.get(color);
 }
 
-export { makeTexture, convertedTextureCache, convertedSpriteTexture, solidTexture, mulberry32, mixColor, drawPixelDisc, makeSmokeTexture, makeGasTexture, makeClayBlobTexture, makeCommanderHaloTexture, PENDULUM_TEX, makePendulumTexture, MAGNET_TEX, makeMagnetTexture, SPRING_BOMB_TEX, makeSpringBombTexture, STEEL_PLATE_TEX, drawMetalBar, makeSteelPlateTexture, makeSkyTexture, STAR_BAND_H, makeStarTexture, makeCityTexture, planeTexture, balloonTexture, clayBalloonTexture, clayBlobTexture, gasBalloonTexture, whiteBalloonTexture, smokeTexture, gemTexture, bulletTexture, powerBulletTexture, cloudTexture, bomberTexture, duoBalloonTexture, commanderBalloonTexture, allyCommanderBalloonTexture, bombTexture, parachuteTexture, mineBalloonTexture, pendulumBalloonTexture, pendulumTexture, magnetBalloonTexture, magnetTexture, springBalloonTexture, springBombTexture, steelBalloonTexture, steelPlateTexture, gasTexture, commanderHaloTexture, allyHaloTexture, powerHaloTexture, makeBalloonSilhouette, invisibleSilhouette, dotTextures, dotTexture };
+export {
+  makeTexture,
+  convertedTextureCache,
+  convertedSpriteTexture,
+  solidTexture,
+  mulberry32,
+  mixColor,
+  drawPixelDisc,
+  makeSmokeTexture,
+  makeGasTexture,
+  makeClayBlobTexture,
+  makeCommanderHaloTexture,
+  PENDULUM_TEX,
+  makePendulumTexture,
+  MAGNET_TEX,
+  makeMagnetTexture,
+  SPRING_BOMB_TEX,
+  makeSpringBombTexture,
+  STEEL_PLATE_TEX,
+  drawMetalBar,
+  makeSteelPlateTexture,
+  makeSkyTexture,
+  STAR_BAND_H,
+  makeStarTexture,
+  makeCityTexture,
+  planeTexture,
+  balloonTexture,
+  clayBalloonTexture,
+  clayBlobTexture,
+  gasBalloonTexture,
+  whiteBalloonTexture,
+  smokeTexture,
+  gemTexture,
+  bulletTexture,
+  powerBulletTexture,
+  cloudTexture,
+  bomberTexture,
+  duoBalloonTexture,
+  commanderBalloonTexture,
+  allyCommanderBalloonTexture,
+  bombTexture,
+  parachuteTexture,
+  mineBalloonTexture,
+  pendulumBalloonTexture,
+  pendulumTexture,
+  magnetBalloonTexture,
+  magnetTexture,
+  springBalloonTexture,
+  springBombTexture,
+  steelBalloonTexture,
+  steelPlateTexture,
+  GALE_FAN_TEX,
+  makeGaleFanTexture,
+  GALE_WIND_TEX,
+  makeGaleWindTexture,
+  galeBalloonTexture,
+  galeFanTexture,
+  galeWindTexture,
+  SOAP_BUBBLE_TEX,
+  makeSoapBubbleTexture,
+  soapBalloonTexture,
+  soapBubbleTexture,
+  gasTexture,
+  commanderHaloTexture,
+  allyHaloTexture,
+  powerHaloTexture,
+  BARRIER_TEXTURE,
+  stoneTexture,
+  makeBalloonSilhouette,
+  invisibleSilhouette,
+  dotTextures,
+  dotTexture,
+};

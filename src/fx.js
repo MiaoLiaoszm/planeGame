@@ -38,7 +38,11 @@ function spawnExplosion(worldX, worldY, targetType) {
             ? ["#ffffff", "#c3d2e4", "#ffd166", "#7d8ea3"]
             : targetType === "clayBalloon"
               ? ["#ffffff", "#ecd3b3", "#c98b5e", "#8a5a35"]
-              : ["#fff3b0", "#ffd166", "#ff8c42", "#ff5a5f"];
+              : targetType === "galeBalloon"
+                ? ["#ffffff", "#bff0ff", "#2f8f9d", "#7ef9ff"]
+                : targetType === "soapBalloon"
+                  ? ["#ffffff", "#eafeff", "#7fd8f5", "#b388ff"]
+                  : ["#fff3b0", "#ffd166", "#ff8c42", "#ff5a5f"];
   const count = targetType === "commander" ? 28 : targetType === "gasBalloon" ? 22 : 16;
   spawnParticles(x, y, colors, count, 60, 220);
 }

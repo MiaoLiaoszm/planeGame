@@ -12,15 +12,33 @@ const actionBtn = document.getElementById("actionBtn");
 const appEl = document.getElementById("app");
 const hintEl = document.getElementById("hint");
 
+const hudCache = { score: null, best: null, hp: null, wave: null, power: null };
+
 function updateHud(hud) {
-  scoreEl.textContent = String(hud.score);
-  bestEl.textContent = String(hud.best);
-  hpEl.textContent = "♥".repeat(Math.max(0, hud.hp)) + "♡".repeat(Math.max(0, MAX_HP - hud.hp));
-  waveEl.textContent = String(hud.wave);
+  if (hudCache.score !== hud.score) {
+    hudCache.score = hud.score;
+    scoreEl.textContent = String(hud.score);
+  }
+  if (hudCache.best !== hud.best) {
+    hudCache.best = hud.best;
+    bestEl.textContent = String(hud.best);
+  }
+  if (hudCache.hp !== hud.hp) {
+    hudCache.hp = hud.hp;
+    hpEl.textContent = "♥".repeat(Math.max(0, hud.hp)) + "♡".repeat(Math.max(0, MAX_HP - hud.hp));
+  }
+  if (hudCache.wave !== hud.wave) {
+    hudCache.wave = hud.wave;
+    waveEl.textContent = String(hud.wave);
+  }
   if (powerEl) {
     const active = hud.powerTimer > 0;
-    powerEl.textContent = active ? `${Math.ceil(hud.powerTimer)}s` : "—";
-    powerEl.classList.toggle("on", active);
+    const label = active ? `${Math.ceil(hud.powerTimer)}s` : "—";
+    if (hudCache.power !== label) {
+      hudCache.power = label;
+      powerEl.textContent = label;
+      powerEl.classList.toggle("on", active);
+    }
   }
 }
 
